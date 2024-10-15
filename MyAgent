@@ -1,0 +1,265 @@
+from agent import Agent
+import random
+import math
+
+# Important: Make sure you put your agents in the agents folder, so that the
+# game runner code can find them.
+
+class StudentAgent(Agent):        
+    '''A sample implementation of a random agent in the game The Resistance'''
+
+    def __init__(self, name='Student'):
+        '''
+        Initialises the agent.
+        '''
+        self.name = name
+    
+    def new_game(self, number_of_players, player_number, spy_list):
+        '''
+        initialises the game, informing the agent of the 
+        number_of_players, the player_number (an id number for the agent in the game),
+        and a list of agent indexes which are the spies, if the agent is a spy, or empty otherwise
+        '''
+        self.number_of_players = number_of_players
+        self.player_number = player_number
+        self.spy_list = spy_list
+        self.verbose = True
+        self.number_of_spies = math.ceil(self.number_of_players / 3)
+        self.mission_successes = 0
+        self.mission_failures = 0
+        self.spy_prevalance = len(spy_list)/number_of_players
+        
+        if self.is_spy():
+            # Calculate likelihood based on the number of spies
+           self.trust_list = {
+                i: self.number_of_spies / self.number_of_players
+                for i in range(self.number_of_players)
+            }
+        else:
+            self.trust_list = {
+            i: self.number_of_spies / (self.number_of_players - 1)  # Use -1 to account for self
+            for i in range(self.number_of_players) 
+            }
+            self.trust_list[self.player_number] = 1  # Set self's trust value to 1
+
+        if self.verbose:
+            self.print_trust()
+
+    def print_trust(self):
+
+        role = "Spy" if self.is_spy() else "Resistance"
+        print(f"Player Number: {self.player_number} - Role: {role}")  
+        if self.trust_list:
+            print("Trust:")
+        for player_index, likelihood in self.trust_list.items():
+            print(f"{player_index}: {likelihood:.2f}")
+
+    def is_spy(self):
+        '''
+        returns True iff the agent is a spy
+        '''
+        return self.player_number in self.spy_list
+    
+    def update_trust(self, agent, severity):
+        if agent in self.trust_list:
+            if 0 < self.trust_list[agent] < 1:  # Only update if value is between 0 and 1
+                self.trust_list[agent] *= (1 + severity)
+        
+        self.normalize_trust()  # Normalize after updating trust values 
+        
+        if self.verbose:
+            self.print_trust()
+
+    def normalize_trust(self):
+    # Calculate total trust for values between 0 and 100
+        total_trust = sum(value for value in self.trust_list.values() if 0 < value < 1)
+    
+        # Avoid division by zero
+        if total_trust == 0:
+            return  # If all values are zero or normalized, no need to normalize
+
+        # Normalize trust values
+        for agent in self.trust_list:
+            if 0 < self.trust_list[agent] < 1:  # Normalize only if value is between 0 and 1
+                self.trust_list[agent] /= total_trust
+
+    def propose_mission(self, team_size, betrayals_required):
+        '''
+        expects a team_size list of distinct agents with id between 0 (inclusive) and number_of_players (exclusive)
+        to be returned. 
+        betrayals_required are the number of betrayals required for the mission to fail.
+        '''
+        
+        if self.is_spy():
+            if self.mission_failures < 2: # Play it safe until victory in grasp
+                team = self.player_number
+                all_agents = [i for i in range(self.number_of_players) if i not in self.spy_list]
+                other_agents = random.sample(all_agents, team_size - 1)
+                team = [team] + other_agents
+                return team
+            else: # Choose all spies to ensure victory
+                team = self.spy_list.copy()
+                all_agents = [i for i in range(self.number_of_players) if i not in self.spy_list]
+                remaining_slots = team_size - len(team)
+                if remaining_slots > 0:
+                    additional_agents = random.sample(all_agents, remaining_slots)
+                    team += additional_agents
+    
+                return team
+                
+        else:    
+            team =  team = [self.player_number]
+            sorted_trust = sorted(self.trust_list.items(), key=lambda x: x[1], reverse=True)
+            for agent, trust in sorted_trust:
+                if agent != self.player_number: 
+                    team.append(agent)
+                    if len(team) == team_size:  
+                        break
+        return team
+
+    def mission_risk_factor (self, mission):
+        total_trust = 0
+        count = 0
+        
+        for agent in mission: # values of 0 and 1 represent perfect knolledge of self or trivial conclusions
+            if agent != self.player_number:  
+                trust_value = self.trust_list.get(agent, 0) 
+                if 0 < trust_value < 1:  
+                    total_trust += trust_value
+                    count += 1
+
+        if count == 0:
+            return 0 
+
+        risk_factor = total_trust / count
+        
+        return risk_factor
+    
+    def vote(self, mission, proposer, betrayals_required):
+        '''
+        mission is a list of agents to be sent on a mission. 
+        The agents on the mission are distinct and indexed between 0 and number_of_players.
+        proposer is an int between 0 and number_of_players and is the index of the player who proposed the mission.
+        betrayals_required are the number of betrayals required for the mission to fail.
+        The function should return True if the vote is for the mission, and False if the vote is against the mission.
+        '''
+        if proposer == self.player_number: #not proposing a mission you are not on is suspicious behaviour 
+            return True
+
+        if self.is_spy():
+            spy_count = sum(1 for agent in mission if agent in self.spy_list)
+            # Spies vote for the mission if they can ensure it will pass or if they meet betrayal criteria
+            return spy_count >= betrayals_required
+        else:
+           
+            if not proposer == self.player_number: 
+                proposer_trust = self.trust_list[proposer]
+            
+            for agent in mission:
+                if self.trust_list.get(agent, 1) < self.spy_prevalance:  #if next leader is more trustworthy, do not pass mission
+                    return False
+
+                next_agent_index = (proposer + 1) % len(self.trust_list)  
+                next_agent_trust = self.trust_list[next_agent_index]
+
+                if proposer_trust < next_agent_trust:
+                    return False
+            
+            risk_factor = self.mission_risk_factor(mission)
+            
+
+        return risk_factor >= self.spy_prevalance #if average trust is lower than the base likelihood of being a spy fail mission 
+        #to impliment single trust threshold instead
+
+    def vote_outcome(self, mission, proposer, votes):
+        '''
+        mission is a list of agents to be sent on a mission. 
+        The agents on the mission are distinct and indexed between 0 and number_of_players.
+        proposer is an int between 0 and number_of_players and is the index of the player who proposed the mission.
+        votes is a dictionary mapping player indexes to Booleans (True if they voted for the mission, False otherwise).
+        No return value is required or expected.
+        '''
+    
+        yes_votes = sum(vote for vote in votes if vote)  
+        no_votes = len(votes) - yes_votes          
+        vote_success = yes_votes > no_votes
+
+        if proposer not in mission:
+             self.update_trust(proposer, -0.75)
+
+        if vote_success:
+            for agent in range(len(votes)):
+                if agent != proposer:  
+                    if not self.is_spy() and agent == self.player_number:
+                        self.update_trust(agent, 0.25) 
+        else:            
+            for agent in range(len(votes)):
+                if agent != proposer:  
+                    if not self.is_spy() and agent == self.player_number:
+                        self.update_trust(agent, -0.015)  
+                    
+
+        if self.verbose:
+            print(f"Vote results: {votes}, Vote success: {vote_success}")
+
+    def betray(self, mission, proposer, betrayals_required):
+        '''
+        mission is a list of agents to be sent on a mission. 
+        The agents on the mission are distinct and indexed between 0 and number_of_players, and include this agent.
+        proposer is an int between 0 and number_of_players and is the index of the player who proposed the mission.
+        betrayals_required are the number of betrayals required for the mission to fail.
+        The method should return True if this agent chooses to betray the mission, and False otherwise. 
+        Only spies are permitted to betray the mission.
+        By default, spies will betray 30% of the time. 
+        '''
+        return True
+
+    def mission_outcome(self, mission, proposer, num_betrayals, mission_success):
+        '''
+        mission is a list of agents to be sent on a mission. 
+        The agents on the mission are distinct and indexed between 0 and number_of_players.
+        proposer is an int between 0 and number_of_players and is the index of the player who proposed the mission.
+        num_betrayals is the number of people on the mission who betrayed the mission, 
+        and mission_success is True if there were not enough betrayals to cause the mission to fail, False otherwise.
+        It is not expected or required for this function to return anything.
+        '''
+        agents_to_evaluate = [agent for agent in mission if agent != self.player_number or self.is_spy()]
+
+
+        if mission_success: 
+            self.mission_successes += 1
+            self.successful_teams.append(mission)
+            if not self.is_spy():
+                for agent in agents_to_evaluate:
+                    self.update_trust(agent, 0.50) 
+        else:
+            if not self.is_spy():
+                for agent in self.previous_vote_history:
+                    self.update_trust(agent, -0.20) #reduces trust for those who voted in favour         
+                for agent in agents_to_evaluate: 
+                    if agent != proposer:  
+                        if not self.is_spy() and self.player_number in mission:
+                            if len(mission) == 2:
+                                if agent != self.player_number:
+                                    self.trust_list[agent] = 0  # Sets trust to 0 when it is able to trivially confirm a spy
+                        self.update_trust(agent, -0.50)  
+                self.update_trust(proposer, -0.75)  
+            self.mission_failures += 1
+
+    def round_outcome(self, rounds_complete, missions_failed):
+        '''
+        basic informative function, where the parameters indicate:
+        rounds_complete, the number of rounds (0-5) that have been completed
+        missions_failed, the number of missions (0-3) that have failed.
+        '''
+        #nothing to do here
+        pass
+    
+    def game_outcome(self, spies_win, spies):
+        '''
+        basic informative function, where the parameters indicate:
+        spies_win, True iff the spies caused 3+ missions to fail
+        spies, a list of the player indexes for the spies.
+        '''
+        #nothing to do here
+        pass
