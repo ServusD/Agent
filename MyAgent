@@ -73,8 +73,7 @@ class StudentAgent(Agent):
     def normalize_trust(self):
     # Calculate total trust for values between 0 and 100
         total_trust = sum(value for value in self.trust_list.values() if 0 < value < 1)
-    
-        # Avoid division by zero
+
         if total_trust == 0:
             return  # If all values are zero or normalized, no need to normalize
 
