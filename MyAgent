@@ -63,7 +63,7 @@ class StudentAgent(Agent):
     def update_trust(self, agent, severity):
         if agent in self.trust_list and 0 < self.trust_list[agent] < 1:
             # Calculate updated trust value using Bayesian update formula
-            prior = self.trust_list[agent]  # P(Loyalist)
+            prior = self.trust_list[agent]  # P(Spy)
             
             # Likelihood ratio from evidence: P(Evidence | Loyalist) / P(Evidence | Spy)
             updated_trust = prior * evidence_likelihood  # Bayesian update step
