@@ -61,17 +61,22 @@ class StudentAgent(Agent):
         return self.player_number in self.spy_list
     
     def update_trust(self, agent, severity):
-        if agent in self.trust_list:
-            if 0 < self.trust_list[agent] < 1:  # Only update if value is between 0 and 1
-                self.trust_list[agent] *= (1 + severity)
-        
-        self.normalize_trust()  # Normalize after updating trust values 
+        if agent in self.trust_list and 0 < self.trust_list[agent] < 1:
+            # Calculate updated trust value using Bayesian update formula
+            prior = self.trust_list[agent]  # P(Loyalist)
+            
+            # Likelihood ratio from evidence: P(Evidence | Loyalist) / P(Evidence | Spy)
+            updated_trust = prior * evidence_likelihood  # Bayesian update step
+            
+        # Update trust value with normalized result
+        self.trust_list[agent] = updated_trust
+
+    self.normalize_trust()
         
         if self.verbose:
             self.print_trust()
 
     def normalize_trust(self):
-    # Calculate total trust for values between 0 and 100
         total_trust = sum(value for value in self.trust_list.values() if 0 < value < 1)
 
         if total_trust == 0:
